@@ -64,6 +64,15 @@ const getTsType = (obj: string, type: "Request" | "Response") => {
   return `interface ${type} ${obj}`;
 };
 
+/**
+ * 
+ * @param description 接口或字段描述
+ * @returns 拼接到接口文档的注释
+ */
+const setDesc = (description?: string) => {
+  return description ? `/** ${description} */` : ``;
+};
+
 // 递归函数，用于将 JSON 转换为 TypeScript 接口定义
 function jsonToTsInterface(obj: Record<string, any>) {
   let namespace = "";
@@ -75,7 +84,7 @@ function jsonToTsInterface(obj: Record<string, any>) {
     // 方法名
     const method = Object.keys(paths[key])[0];
 
-    const { responses, requestBody, parameters, operationId } = paths[key][method];
+    const { responses, requestBody, parameters, description } = paths[key][method];
     if (!methods.includes(methodConfig[method])) {
       // 收集使用方法名用于在文件头部引用
       methods.push(methodConfig[method]);
@@ -86,7 +95,7 @@ function jsonToTsInterface(obj: Record<string, any>) {
     if (method === "get" && parameters.length) {
       req = parameters.reduce(
         (props: any, item: any) => {
-          props.properties[item.name] = { type: item.schema.type };
+          props.properties[item.name] = { type: item.schema.type, description: item.description };
           if (item.required) {
             props.required.push(item.name);
           }
@@ -106,7 +115,7 @@ function jsonToTsInterface(obj: Record<string, any>) {
     const resProps = keyOfProperties(res, obj);
     // 判断是不是数组
     interfaceString += `
-/** ${operationId} */
+${setDesc(description)}
 export namespace ${namespace} {
   export ${getTsType(reqProps, "Request")}
   \n
@@ -152,7 +161,10 @@ function keyOfProperties(
     ${Object.keys(properties)
       .map(
         (key) =>
-          `${key}${required.includes(key) ? "" : "?"}: ${keyOfProperties(properties[key], obj)};`
+          `
+        ${setDesc(properties[key].description)}
+        ${key}${required.includes(key) ? "" : "?"}: ${keyOfProperties(properties[key], obj)};
+        `
       )
       .join(`\n`)}  
   }${isArr ? "[]" : ""}`;
