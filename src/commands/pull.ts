@@ -21,7 +21,7 @@ export const createPull = () => {
       if (tag) {
         if (tag === "全部接口") {
           const all = await Promise.all(
-            list.map((item: any) => http.fetchApiByTag(item.name))
+            list.map((item: any) => http.fetchApiByTag(item))
           );
           all.forEach((item: any) => genInterfaceFile(item));
         } else {
