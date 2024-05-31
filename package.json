@@ -2,7 +2,7 @@
   "name": "fox-api",
   "displayName": "fox-api",
   "description": "获取Apifox接口",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "publisher": "lq-fe",
   "engines": {
     "vscode": "^1.89.0"
@@ -15,8 +15,12 @@
   "contributes": {
     "commands": [
       {
-        "command": "fox-api",
+        "command": "fox-api.pull",
         "title": "Apifox Pull"
+      },
+      {
+        "command": "fox-api.push",
+        "title": "Apifox Push"
       }
     ],
     "configuration": {

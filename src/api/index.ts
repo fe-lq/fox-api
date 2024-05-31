@@ -18,7 +18,7 @@ export class CreateHttp {
   instance: any;
   constructor(projectId: string, apiToken: string) {
     this.instance = axios.create({
-      baseURL: `https://api.apifox.com/v1/projects/${projectId}/export-openapi`,
+      baseURL: `https://api.apifox.com/v1/projects/${projectId}`,
       headers: {
         "X-Apifox-Api-Version": "2024-01-20",
         Authorization: `Bearer ${apiToken}`,
@@ -33,9 +33,12 @@ export class CreateHttp {
     );
   }
 
-  // 获取所有API
+  /**
+   * 获取所有API
+   * @returns
+   */
   fetchAllApis(): Promise<any> {
-    return this.instance.post("", {
+    return this.instance.post("/export-openapi", {
       ...baseParams,
       scope: {
         type: "ALL",
@@ -44,13 +47,29 @@ export class CreateHttp {
     });
   }
 
+  /**
+   * 根据标签获取API
+   * @param tag 标签
+   * @returns
+   */
   fetchApiByTag(tag: string): Promise<any> {
-    return this.instance.post("", {
+    return this.instance.post("/export-openapi", {
       ...baseParams,
       scope: {
         type: "SELECTED_TAGS",
         selectedTags: [tag],
       },
+    });
+  }
+
+  /**
+   * 导入API
+   * @param data
+   */
+  fetchImportApi(input: any) {
+    return this.instance.post("/import-openapi", {
+      ...baseParams,
+      input,
     });
   }
 }
