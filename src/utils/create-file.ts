@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { createFile } from "./index";
-import { get, isEmpty } from "lodash";
+import { isEmpty } from "lodash";
 
 // 客户端使用的请求方法
 const methodConfig: Record<string, string> = {
@@ -27,45 +27,37 @@ const getNamespace = (path: string) => {
  * @param ref 引用地址
  * @returns 引用名称
  */
-const getMapType = (ref: string) => {
-  return ref.slice(2).replace(/\//g, ".");
+const getMapType = (ref: string): string => {
+  return ref.split("/").pop() || "unknown";
 };
 
 /**
  * 处理映射的类型
  */
-const getProps = (obj: Record<string, any>, dataObj: Record<string, any>) => {
+const getProps = (obj: Record<string, any>) => {
   if (obj.$ref) {
-    const objLink = getMapType(obj.$ref);
-    obj = get(dataObj, objLink, {});
+    const typeName = getMapType(obj.$ref);
+    obj.$ref = typeName;
   }
   if (obj.type === "array") {
     if (obj.items.$ref) {
-      const objLink = getMapType(obj.items.$ref);
-      obj.items = get(dataObj, objLink, {});
+      const typeName = getMapType(obj.items.$ref);
+      obj.items.$ref = typeName;
     }
   }
   return obj;
 };
 
-const getTsType = (obj: string, type: "Request" | "Response") => {
+const getTsType = (obj: string, type: string) => {
   // 数组、枚举、简单类型用type关键字
-  if (
-    obj.endsWith("[]") ||
-    obj.includes(" | ") ||
-    obj === "unknown" ||
-    obj === "string" ||
-    obj === "number" ||
-    obj === "boolean" ||
-    obj === "null"
-  ) {
-    return `type ${type} = ${obj}`;
+  if (obj.startsWith("{") && obj.endsWith("}")) {
+    return `interface ${type} ${obj}`;
   }
-  return `interface ${type} ${obj}`;
+  return `type ${type} = ${obj}`;
 };
 
 /**
- * 
+ *
  * @param description 接口或字段描述
  * @returns 拼接到接口文档的注释
  */
@@ -76,15 +68,18 @@ const setDesc = (description?: string) => {
 // 递归函数，用于将 JSON 转换为 TypeScript 接口定义
 function jsonToTsInterface(obj: Record<string, any>) {
   let namespace = "";
-  let interfaceString = ``;
+  let httpInterfaceString = ``;
+  let schemasString = ``;
   const methods: string[] = [];
-  const { paths, tags } = obj;
+  const { paths, tags, components } = obj;
+  // 遍历每个路由地址
   for (const key in paths) {
     namespace = getNamespace(key);
     // 方法名
     const method = Object.keys(paths[key])[0];
 
-    const { responses, requestBody, parameters, description } = paths[key][method];
+    const { responses, requestBody, parameters, description } =
+      paths[key][method];
     if (!methods.includes(methodConfig[method])) {
       // 收集使用方法名用于在文件头部引用
       methods.push(methodConfig[method]);
@@ -95,7 +90,11 @@ function jsonToTsInterface(obj: Record<string, any>) {
     if (method === "get" && parameters.length) {
       req = parameters.reduce(
         (props: any, item: any) => {
-          props.properties[item.name] = { type: item.schema.type, description: item.description };
+          props.properties[item.name] = {
+            type: item.schema.type,
+            enum: item.schema.enum,
+            description: item.description,
+          };
           if (item.required) {
             props.required.push(item.name);
           }
@@ -111,10 +110,10 @@ function jsonToTsInterface(obj: Record<string, any>) {
     if (responses["200"]) {
       res = responses["200"]["content"]["application/json"]["schema"];
     }
-    const reqProps = keyOfProperties(req, obj);
-    const resProps = keyOfProperties(res, obj);
+    const reqProps = keyOfProperties(req);
+    const resProps = keyOfProperties(res);
     // 判断是不是数组
-    interfaceString += `
+    httpInterfaceString += `
 ${setDesc(description)}
 export namespace ${namespace} {
   export ${getTsType(reqProps, "Request")}
@@ -125,26 +124,60 @@ export namespace ${namespace} {
 } 
 \n`;
   }
-  interfaceString =
-`
+
+  // 遍历components的映射接口类型
+  for (const key in components.schemas) {
+    const schemasItem = components.schemas[key];
+    const props = keyOfProperties(schemasItem);
+    schemasString += `
+  ${setDesc(schemasItem.description)}
+  export ${getTsType(props, key)}
+  \n`;
+  }
+
+  const allInterfaceString =
+    `
 /** ${tags[0].name} */
 import { ${methods.join(", ")} } from "@/http";
-` + interfaceString;
-  return interfaceString;
+` +
+    httpInterfaceString +
+    schemasString;
+  return allInterfaceString;
 }
 
 // 将 JSON schema 的 properties 中的键转换为 PascalCase（TypeScript 接口属性通常使用 PascalCase）
-function keyOfProperties(
-  data: Record<string, any>,
-  obj: Record<string, any>
-): any {
-  let requestData = getProps(data, obj);
+function keyOfProperties(data: Record<string, any>): any {
+  let requestData = getProps(data);
   const isArr = data.type === "array";
   if (isArr) {
     requestData = data.items;
   }
 
-  const { properties, required = [], type, enum: enumType } = requestData;
+  const {
+    properties,
+    required = [],
+    type,
+    enum: enumType,
+    $ref,
+    allOf,
+    anyOf,
+  } = requestData;
+  // 有映射接口类型的情况
+  if ($ref) {
+    return `${$ref}${isArr ? "[]" : ""}`;
+  }
+  if (allOf) {
+    return allOf.reduce((str: string, item: any, index: number) => {
+      return (str +=
+        keyOfProperties(item) + (index === allOf.length - 1 ? "" : " & "));
+    }, ``);
+  }
+  if (anyOf) {
+    return anyOf.reduce((str: string, item: any, index: number) => {
+      return (str +=
+        keyOfProperties(item) + (index === anyOf.length - 1 ? "" : " | "));
+    }, ``);
+  }
   // 简单类型的值
   if (type && type !== "object" && type !== "array") {
     if (enumType) {
@@ -163,7 +196,7 @@ function keyOfProperties(
         (key) =>
           `
         ${setDesc(properties[key].description)}
-        ${key}${required.includes(key) ? "" : "?"}: ${keyOfProperties(properties[key], obj)};
+        ${key}${required.includes(key) ? "" : "?"}: ${keyOfProperties(properties[key])};
         `
       )
       .join(`\n`)}  

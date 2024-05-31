@@ -2,7 +2,7 @@
   "name": "fox-api",
   "displayName": "fox-api",
   "description": "获取Apifox接口",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "lq-fe",
   "engines": {
     "vscode": "^1.89.0"
